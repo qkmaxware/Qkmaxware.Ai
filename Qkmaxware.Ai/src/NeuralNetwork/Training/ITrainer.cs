@@ -8,7 +8,8 @@ public interface ITrainer<TNetwork> where TNetwork:INeuralNetwork {
     /// <summary>
     /// Try to train the given neural network
     /// </summary>
-    /// <param name="nn">network to train</param>
+    /// <param name="initial">Network to train</param>
+    /// <param name="trained">Network after being trained. Depending on the training method this is not guaranteed to be the same object as the initial network.</param>
     /// <returns>true if network has been trained successfully</returns>
-    public bool TryTrain(TNetwork nn);
+    public bool TryTrain(TNetwork initial, out TNetwork trained);
 }

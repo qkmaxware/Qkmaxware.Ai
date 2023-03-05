@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Text;
 
 namespace Qkmaxware.Ai.NeuralNetwork;
@@ -5,7 +6,7 @@ namespace Qkmaxware.Ai.NeuralNetwork;
 /// <summary>
 /// Vector with tagged names for each element
 /// </summary>
-public class UntaggedVector : IVector {
+public class UntaggedVector : IMutableVector {
     private double[] values;
 
     /// <summary>
@@ -28,7 +29,10 @@ public class UntaggedVector : IVector {
     /// Get the nth element in this vector
     /// </summary>
     /// <value>value at the nth position</value>
-    public double this[int n] => values[n];
+    public double this[int n] {
+        get => values[n];
+        set => values[n] = value;
+    }
 
     /// <summary>
     /// The number of elements in the vector
@@ -46,5 +50,13 @@ public class UntaggedVector : IVector {
         }
         sb.Append(']');
         return sb.ToString();
+    }
+
+    public IEnumerator<double> GetEnumerator() {
+        return (IEnumerator<double>)this.values.GetEnumerator();
+    }
+
+    IEnumerator IEnumerable.GetEnumerator() {
+        return this.values.GetEnumerator();
     }
 }
