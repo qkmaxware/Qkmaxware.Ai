@@ -82,6 +82,11 @@ public class FeedForwardNeuralNetwork : INeuralNetwork, IBackPropagableNeuralNet
 
         // Create synapses
         synapses = new Synapse[this.NeuronCount, this.NeuronCount];
+        for (var from = 0; from < this.NeuronCount; from++) {
+            for (var to = 0; to < this.NeuronCount; to++) {
+                this.synapses[from, to] = new Synapse((NeuronId)from,(NeuronId)to);
+            }
+        }
 
         // Store activation function
         this.activation = activationFunction;
@@ -242,7 +247,9 @@ public class FeedForwardNeuralNetwork : INeuralNetwork, IBackPropagableNeuralNet
     public void RandomizeSynapseWeights() {
         for (var i = 0; i < this.synapses.GetLength(0); i++) {
             for (var j = 0; j < this.synapses.GetLength(1); j++) {
-                this.synapses[i,j].Weight = rng.NextDouble();
+                var syn = this.synapses[i,j];
+                syn.Weight = rng.NextDouble();
+                this.synapses[i,j] = syn;
             }
         }
     }
@@ -253,5 +260,52 @@ public class FeedForwardNeuralNetwork : INeuralNetwork, IBackPropagableNeuralNet
     /// <returns>genome</returns>
     public FeedForwardNeuralNetworkGenome EncodeToGenome() {
         return new FeedForwardNeuralNetworkGenome(this);
+    }
+
+    /// <summary>
+    /// Enumerate over each synapse
+    /// </summary>
+    /// <returns></returns>
+    public IEnumerable<Synapse> EnumerateSynapses() {
+        for (var layerId = 1; layerId < LayerCount; layerId++) {
+            var offset = this.neuronLayerOffsets[layerId];
+            var prevLayerId = layerId - 1;
+            var prevLayerOffset = this.neuronLayerOffsets[prevLayerId];
+            var size = this.layerSizes[layerId];
+            var prevLayerSize = this.layerSizes[prevLayerId];
+
+            // Foreach neuron in layer
+            for (var neuronId = 0; neuronId < size; neuronId++) {
+                var to = offset + neuronId;
+                // Foreach synapse connecting the previous layer to this one
+                for (var prevLayerNeuronId = 0; prevLayerNeuronId < prevLayerSize; prevLayerNeuronId++) {
+                    var from = prevLayerOffset + prevLayerNeuronId;
+                    yield return this.synapses[from, to];
+                }
+            }
+        }
+    }
+
+    public void BatchSetSynapseWeights(IEnumerable<double> weights) {
+        var enumerator = weights.GetEnumerator();
+
+        for (var layerId = 1; layerId < LayerCount; layerId++) {
+            var offset = this.neuronLayerOffsets[layerId];
+            var prevLayerId = layerId - 1;
+            var prevLayerOffset = this.neuronLayerOffsets[prevLayerId];
+            var size = this.layerSizes[layerId];
+            var prevLayerSize = this.layerSizes[prevLayerId];
+
+            // Foreach neuron in layer
+            for (var neuronId = 0; neuronId < size; neuronId++) {
+                var to = offset + neuronId;
+                // Foreach synapse connecting the previous layer to this one
+                for (var prevLayerNeuronId = 0; prevLayerNeuronId < prevLayerSize; prevLayerNeuronId++) {
+                    var from = prevLayerOffset + prevLayerNeuronId;
+                    enumerator.MoveNext();
+                    SetSynapseWeight((NeuronId)from, (NeuronId)to, enumerator.Current);
+                }
+            }
+        }
     }
 }

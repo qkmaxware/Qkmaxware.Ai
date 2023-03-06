@@ -14,7 +14,7 @@ public class NeuralNetworkFitness<TNetwork, TGenome> : IFitnessTest<TGenome> whe
         this.data = data;
     }
 
-    public double Test(TGenome genome) {
+    public double TestError(TGenome genome) {
         var nn = genome.Decode();
 
         double error = 0;
@@ -24,10 +24,11 @@ public class NeuralNetworkFitness<TNetwork, TGenome> : IFitnessTest<TGenome> whe
             for (int j = 0; j < results.Count; j++) {
                 a += Math.Abs(results[j] - pair.ResultVector[j]);   // difference between computed and actual values is the error of this specific value
             }
+            error += a / results.Count;
         }
         error /= data.Size;                       // average error over all validation data
 
-        return -error; // by inverting it we guarantee that "stronger" networks are towards 0 and "worse" networks are < than 0
+        return error; // Higher value is greater error
     }
 }
 
@@ -53,23 +54,46 @@ public class FeedForwardNeuralNetworkGenome : IGenome, IDecodableGenome<IGenomic
         for (var i = 0; i < this.LayerCount; i++)
             this.NeuronCounts[i] = network.CountNeuronsInLayer(i);
 
-        // TODO weights
+        this.weights = network.EnumerateSynapses().Select(x => x.Weight).ToArray();
     }
 
-    public double GetGene(int i) {
-        if (weights == null)
-            return 0;
-        if (i >= 0 && i < weights.Length)
-            return weights[i];
-        return 0;
+    public FeedForwardNeuralNetworkGenome(FeedForwardNeuralNetworkGenome genome) {
+        this.ActivationFunction = genome.ActivationFunction;
+        this.LayerCount = genome.LayerCount;
+        this.NeuronCounts = new int[LayerCount];
+        for (var i = 0; i < this.LayerCount; i++)
+            this.NeuronCounts[i] = genome.NeuronCounts[i];
+
+        this.weights = new double[genome.weights.Length];
+        for (var i = 0; i < this.weights.Length; i++)
+            this.weights[i] = genome.weights[i];
+    }
+
+    /// <summary>
+    /// Clone the existing genome into a new genome
+    /// </summary>
+    /// <returns>new genome identical to the current one</returns>
+    public IGenome Clone() {
+        return new FeedForwardNeuralNetworkGenome(this);
     }
 
     public IGenomicNeuralNetwork<FeedForwardNeuralNetworkGenome> Decode() {
         var nn = new FeedForwardNeuralNetwork(this.ActivationFunction, this.NeuronCounts[0], this.NeuronCounts.Skip(1).ToArray());
-        
-        // TODO weights
-        
+        nn.BatchSetSynapseWeights(this.weights);
         return nn;
+    }
+
+    public int CountWeights => this.weights.Length;
+
+    public double GetWeight(int n) {
+        if (n >= 0 && n < this.weights.Length)
+            return this.weights[n];
+        return 0;
+    }
+
+    public void SetWeight(int n, double weight) {
+        if (n >= 0 && n < this.weights.Length)
+            this.weights[n] = weight;
     }
 }
 
@@ -82,16 +106,45 @@ public class FeedForwardNeuralNetworkMeiosis : Training.IReproductiveRules<FeedF
             throw new ArgumentException("Genomes use different activation functions and cannot be crossed-over");
         if (a.LayerCount != b.LayerCount)
             throw new ArgumentException("Genomes have different layer counts and cannot be crossed over");
+        if (a.CountWeights != b.CountWeights)
+            throw new ArgumentException("Genomes have a different number of weights and cannot be crossed over");
 
-        throw new NotImplementedException();
+        var childA = new FeedForwardNeuralNetworkGenome(a);
+        var childB = new FeedForwardNeuralNetworkGenome(a);
+
+        for (var i = 0; i < a.CountWeights; i++) {
+            int mask = rng.Next(2);
+            if (mask == 0) {
+                childA.SetWeight(i, a.GetWeight(i));
+                childB.SetWeight(i, b.GetWeight(i));
+            } else {
+                childA.SetWeight(i, b.GetWeight(i));
+                childB.SetWeight(i, a.GetWeight(i));
+            }
+        }
+
+        return (childA, childB);
     }
 
     public double DifferenceBetween(FeedForwardNeuralNetworkGenome a, FeedForwardNeuralNetworkGenome b) {
-        throw new NotImplementedException();
+        var diff = 0.0;
+        var count = Math.Max(a.CountWeights, b.CountWeights);
+
+        for(int g = 0; g < count; g++){
+            var da = g < a.CountWeights ? a.GetWeight(g) : 0;
+            var db = g < b.CountWeights ? b.GetWeight(g) : 0;
+            diff += Math.Abs(da - db);
+        }
+        return diff;
     }
 
+    private static Random rng = new Random();
     public FeedForwardNeuralNetworkGenome Mutate(FeedForwardNeuralNetworkGenome genome) {
-        throw new NotImplementedException();
+        var next = new FeedForwardNeuralNetworkGenome(genome);
+        for (var i = 0; i < next.CountWeights; i++) {
+            next.SetWeight(i, genome.GetWeight(i) + (rng.NextDouble() - 0.5));
+        }
+        return next;
     }
 }
 

@@ -12,8 +12,8 @@ public class PopulationSelection {
         var total = Math.Min(elite + mutation + crossover, 1);
 
         this.PercentageSelectedFromElite = elite / total;
+        this.PercentageSelectedFromCrossover = crossover / total;
         this.PercentageSelectedFromMutation = mutation / total;
-        this.PercentageSelectedFromCrossover = mutation / total;
     }
 }
 
@@ -63,16 +63,23 @@ public class GeneticEvolution<TGenome> where TGenome:IGenome {
             if (population.Count < 0) {
                 throw new ArgumentException("Empty population cannot be trained");
             }
+            Console.WriteLine($"generation: {generation}");
 
             // Test fitness
             TestAll(population);
 
             // Sort by fitness
             population.Sort(byFitness);
-            Rank(population, (member, rank) => member.fitness_rank = rank, (member, probability) => member.probability_of_selection_from_fitness = probability);
-        
+            Rank(
+                population, 
+                (member, rank) => member.fitness_rank = rank, 
+                (member, probability) => member.probability_of_selection_from_fitness = probability
+            );
+            
             // If best genome good enough?
-            if (population[0].fitness < this.DesiredAccuracy) {
+            Console.WriteLine($"    best has fitness: {population[0].fitness}");
+            Console.WriteLine($"    worst has fitness: {population[population.Count - 1].fitness}");
+            if (Math.Abs(population[0].fitness) < this.DesiredAccuracy) {
                 best = population[0].genome;
                 return true;
             }
@@ -92,7 +99,7 @@ public class GeneticEvolution<TGenome> where TGenome:IGenome {
         }
     }
     private void test(TableRow row) {
-        row.fitness = this.FitnessTest.Test(row.genome);
+        row.fitness = this.FitnessTest.TestError(row.genome);
     }
 
     private void Rank(List<TableRow> population, Action<TableRow, int> rank, Action<TableRow, double> selectionProbability) {
@@ -112,7 +119,6 @@ public class GeneticEvolution<TGenome> where TGenome:IGenome {
         EliteSelection(next, current);
         CrossoverSelection(next, current);
         MutationSelection(next, current);
-
         return next;
     }
 
@@ -124,8 +130,7 @@ public class GeneticEvolution<TGenome> where TGenome:IGenome {
             elite.Add(population[0]); 
             // Maybe remove it?
 
-            // Add the remaining elites based on diversity score from the populationly selected elites
-            var rng = new System.Random();
+            // Add the remaining elites based on diversity score from the population selected elites
             for (var i = 1; i < elite_count; i++) {
                 // First test for diversity from the elites
                 TestDiversity(population, elite);
@@ -159,20 +164,18 @@ public class GeneticEvolution<TGenome> where TGenome:IGenome {
         }
     }
 
+    private static System.Random rng = new System.Random();
     private void CrossoverSelection(List<TableRow> elite, List<TableRow> population) {
-        int crossover_count = Math.Min((int)(population.Count * this.PopulationSelection.PercentageSelectedFromCrossover), 0) / 2;
-
-        var rng = new System.Random();
-        List<TGenome> children = new List<TGenome>();
+        int crossover_count = Math.Max((int)(population.Count * this.PopulationSelection.PercentageSelectedFromCrossover), 0) / 2;
+        
         for (var i = 0; i < crossover_count; i++) {
             var A = elite[rng.Next(elite.Count)];
             var B = elite[rng.Next(elite.Count)];
 
             var offspring = this.reproductiveRules.Crossover(A.genome, B.genome);
-            children.Add(offspring.Item1);
-            children.Add(offspring.Item2);
+            elite.Add(new TableRow(offspring.Item1));
+            elite.Add(new TableRow(offspring.Item2));
         }
-        elite.AddRange(children.Select(child => new TableRow(child)));
     }
 
     private void MutationSelection(List<TableRow> next, List<TableRow> population) {
@@ -192,7 +195,7 @@ public class GeneticEvolution<TGenome> where TGenome:IGenome {
         // Calculate diversity score
         foreach (var A in population) {
             var diversity = 0.0;
-            foreach (var B in population) {
+            foreach (var B in elite) {
                 diversity += this.reproductiveRules.DifferenceBetween(A.genome, B.genome);
             }
             A.diversity = diversity;
@@ -226,21 +229,21 @@ public class GeneticEvolution<TGenome> where TGenome:IGenome {
     private class FitnessComparator : IComparer<TableRow> {
         public int Compare(TableRow? x, TableRow? y) {
             #nullable disable
-            return (x.fitness).CompareTo(y.fitness);
+            return (x.fitness).CompareTo(y.fitness); // put low values first (low error = high fitness)
             #nullable restore
         }
     }
     private class DiversityComparator : IComparer<TableRow> {
         public int Compare(TableRow? x, TableRow? y) {
             #nullable disable
-            return (x.diversity).CompareTo(y.diversity);
+            return -(x.diversity).CompareTo(y.diversity); // high diversity first
             #nullable restore
         }
     }
     private class CombinedRankComparator : IComparer<TableRow> {
         public int Compare(TableRow? x, TableRow? y) {
             #nullable disable
-            return (x.CombinedRank()).CompareTo(y.CombinedRank());
+            return (x.CombinedRank()).CompareTo(y.CombinedRank()); // low rank first 
             #nullable restore
         }
     }
@@ -261,6 +264,14 @@ public class GeneticEvolutionTrainer<TGenome> : GeneticEvolution<TGenome>, ITrai
 
     public GeneticEvolutionTrainer(int generations, double desiredAccuracy, IReproductiveRules<TGenome> reproduction, IFitnessTest<TGenome> fitness, PopulationSelection distribution) 
     : base(generations, desiredAccuracy, reproduction, fitness, distribution) {}
+
+    public bool TryTrain(IEnumerable<TGenome> initial, out IGenomicNeuralNetwork<TGenome> trained) {
+        TGenome best;
+        bool success = this.Evolve(initial, out best);
+        trained = best.Decode();
+
+        return success;
+    }
 
     public bool TryTrain(IGenomicNeuralNetwork<TGenome> initial, out IGenomicNeuralNetwork<TGenome> trained) {
         var genome = initial.EncodeToGenome();
